@@ -36,6 +36,9 @@ internal sealed class Server : IDisposable
 
     public event Action<string, bool>? StatusChanged;
 
+    /// <summary>true の間は受信内容を破棄する。</summary>
+    public bool Paused { get; set; }
+
     /// <summary>クリップボードに反映した直後に UI スレッドで呼ばれる。引数は受信したバイト列。</summary>
     public event Action<byte[]>? Applied;
 
@@ -257,6 +260,13 @@ internal sealed class Server : IDisposable
         {
             await stream.WriteAsync(new byte[] { 0 }, timeout.Token);
             Log.Write($"「受け取る」が無効なため破棄: {name}");
+            return;
+        }
+
+        if (Paused)
+        {
+            await stream.WriteAsync(new byte[] { 0 }, timeout.Token);
+            Log.Write($"一時停止中のため破棄: {name}");
             return;
         }
 

@@ -27,7 +27,11 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
         uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         config = AppConfig.Load();
 
-        pauseItem = new ToolStripMenuItem("一時停止", null, (_, _) => pauseItem!.Checked = !pauseItem.Checked);
+        pauseItem = new ToolStripMenuItem("一時停止", null, (_, _) =>
+        {
+            pauseItem!.Checked = !pauseItem.Checked;
+            server?.Paused = pauseItem.Checked;
+        });
         notifyItem = new ToolStripMenuItem("通知を表示", null, (_, _) =>
         {
             notifyItem!.Checked = !notifyItem.Checked;
@@ -97,8 +101,10 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
         // ペアリング要求を受けるため、受け取るが無効でも待ち受けは起動する
         try
         {
-            server = new Server(config, config.ReceiveEnabled, uiContext, AskPairingAsync);
-            server.StatusChanged += OnStatus;
+			server = new Server( config, config.ReceiveEnabled, uiContext, AskPairingAsync ) {
+				Paused = pauseItem.Checked
+			};
+			server.StatusChanged += OnStatus;
             server.Applied += OnApplied;
             server.Paired += _ => DevicesChanged?.Invoke();
         }
