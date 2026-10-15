@@ -23,6 +23,9 @@ internal sealed class PairingRequestForm : Form
     {
         Text = "SendClipboard - ペアリング要求";
         Icon = AppIcon.Value;
+        // 96 DPI 基準で書いた余白・サイズを、表示するモニターの DPI に合わせて拡大する
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -84,6 +87,9 @@ internal sealed class PairingWaitForm : Form
     {
         Text = "SendClipboard - ペアリング";
         Icon = AppIcon.Value;
+        // 96 DPI 基準で書いた余白・サイズを、表示するモニターの DPI に合わせて拡大する
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;

@@ -58,6 +58,12 @@ public sealed class AppConfig
     /// <summary>相手のクリップボードを受け取る。</summary>
     public bool ReceiveEnabled { get; set; }
 
+    /// <summary>トレイメニューから撮影したウインドウのスクリーンショットを相手に送る。</summary>
+    public bool ScreenshotSendEnabled { get; set; } = true;
+
+    /// <summary>相手のスクリーンショットをクリップボードに受け取る。</summary>
+    public bool ScreenshotReceiveEnabled { get; set; }
+
     /// <summary>送受信の成功をバルーン通知する (失敗は常に通知)。トレイメニューで切り替える。</summary>
     public bool NotifyEnabled { get; set; } = true;
 
@@ -129,6 +135,8 @@ public sealed class AppConfig
             Alias = other.Alias;
             SendEnabled = other.SendEnabled;
             ReceiveEnabled = other.ReceiveEnabled;
+            ScreenshotSendEnabled = other.ScreenshotSendEnabled;
+            ScreenshotReceiveEnabled = other.ScreenshotReceiveEnabled;
             Port = other.Port;
         }
     }

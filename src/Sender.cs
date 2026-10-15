@@ -13,7 +13,7 @@ internal sealed class Sender : IDisposable
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(60);
 
     private readonly AppConfig config;
-    private readonly Func<IReadOnlyList<SendTarget>> getTargets;
+    private readonly Func<ClipboardPayload, IReadOnlyList<SendTarget>> getTargets;
     private readonly SemaphoreSlim signal = new(0, 1);
     private readonly CancellationTokenSource cts = new();
     private readonly object pendingLock = new();
@@ -32,7 +32,7 @@ internal sealed class Sender : IDisposable
 
     public event Action<string, bool>? StatusChanged;
 
-    public Sender(AppConfig config, Func<IReadOnlyList<SendTarget>> getTargets)
+    public Sender(AppConfig config, Func<ClipboardPayload, IReadOnlyList<SendTarget>> getTargets)
     {
         this.config = config;
         this.getTargets = getTargets;
@@ -95,13 +95,20 @@ internal sealed class Sender : IDisposable
                 continue;
             }
 
+            // スクリーンショットは明示的な操作なので、同じ内容でも送り直す
             byte[] hash = SHA256.HashData(bytes);
-            if (lastHash != null && hash.AsSpan().SequenceEqual(lastHash))
+            if (!payload.IsImage && lastHash != null && hash.AsSpan().SequenceEqual(lastHash))
             {
                 continue;
             }
 
-            IReadOnlyList<SendTarget> targets = getTargets();
+            IReadOnlyList<SendTarget> targets = getTargets(payload);
+            if (targets.Count == 0 && payload.IsImage)
+            {
+                Report("送信先がありません (ペアリング済みで「スクリーンショットを受け取る」が有効なPCが同じLANに見つかりません)", false);
+                continue;
+            }
+
             if (targets.Count == 0)
             {
                 const string message = "送信先がありません (ペアリング済みで「受け取る」が有効なPCが同じLANに見つかりません)";

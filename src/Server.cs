@@ -256,10 +256,13 @@ internal sealed class Server : IDisposable
         }
 
         string name = config.FindPair(senderId)?.Name ?? senderId;
-        if (!receiveEnabled)
+        ClipboardPayload payload = ClipboardPayload.Deserialize(bytes);
+        if (payload.IsImage ? !config.ScreenshotReceiveEnabled : !receiveEnabled)
         {
             await stream.WriteAsync(new byte[] { 0 }, timeout.Token);
-            Log.Write($"「受け取る」が無効なため破棄: {name}");
+            Log.Write(payload.IsImage
+                ? $"「スクリーンショットを受け取る」が無効なため破棄: {name}"
+                : $"「受け取る」が無効なため破棄: {name}");
             return;
         }
 
@@ -269,8 +272,6 @@ internal sealed class Server : IDisposable
             Log.Write($"一時停止中のため破棄: {name}");
             return;
         }
-
-        ClipboardPayload payload = ClipboardPayload.Deserialize(bytes);
 
         var done = new TaskCompletionSource();
         uiContext.Post(

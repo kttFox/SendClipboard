@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace SendClipboard;
 
 /// <summary>同じLANで起動している SendClipboard。複数NICのPCは Addresses に複数入る (先頭が最初に見えたもの)。</summary>
-internal sealed record Peer(string Id, string Alias, IReadOnlyList<IPAddress> Addresses, int Port, bool CanSend, bool CanReceive, DateTime LastSeenUtc)
+internal sealed record Peer(string Id, string Alias, IReadOnlyList<IPAddress> Addresses, int Port, bool CanSend, bool CanReceive, bool CanSendScreenshot, bool CanReceiveScreenshot, DateTime LastSeenUtc)
 {
     public IPAddress Address => Addresses[0];
 }
@@ -32,6 +32,8 @@ internal sealed class Discovery : IDisposable
     private readonly AppConfig config;
     private readonly bool canSend;
     private readonly bool canReceive;
+    private readonly bool canSendScreenshot;
+    private readonly bool canReceiveScreenshot;
     private readonly UdpClient udp;
     private readonly SemaphoreSlim sendLock = new(1, 1);
     private readonly CancellationTokenSource cts = new();
@@ -46,11 +48,13 @@ internal sealed class Discovery : IDisposable
     public event Action? PeersChanged;
 
     /// <summary>canSend / canReceive には設定値ではなく、実際に起動できた機能を渡す。</summary>
-    public Discovery(AppConfig config, bool canSend, bool canReceive)
+    public Discovery(AppConfig config, bool canSend, bool canReceive, bool canSendScreenshot, bool canReceiveScreenshot)
     {
         this.config = config;
         this.canSend = canSend;
         this.canReceive = canReceive;
+        this.canSendScreenshot = canSendScreenshot;
+        this.canReceiveScreenshot = canReceiveScreenshot;
 
         udp = new UdpClient(AddressFamily.InterNetwork) { EnableBroadcast = true };
         udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
@@ -120,6 +124,8 @@ internal sealed class Discovery : IDisposable
             Announce = announce,
             Send = canSend,
             Receive = canReceive,
+            SendScreenshot = canSendScreenshot,
+            ReceiveScreenshot = canReceiveScreenshot,
         };
         byte[] packet = JsonSerializer.SerializeToUtf8Bytes(message);
 
@@ -244,9 +250,10 @@ internal sealed class Discovery : IDisposable
                 .OrderBy(IPAddress.IsLoopback)
                 .ToList();
 
-            peer = new Peer(message.Fingerprint, alias, addresses, message.Port, message.Send, message.Receive, DateTime.UtcNow);
+            peer = new Peer(message.Fingerprint, alias, addresses, message.Port, message.Send, message.Receive, message.SendScreenshot, message.ReceiveScreenshot, DateTime.UtcNow);
             changed = old == null || old.Alias != peer.Alias || old.Port != peer.Port ||
-                      old.CanSend != peer.CanSend || old.CanReceive != peer.CanReceive;
+                      old.CanSend != peer.CanSend || old.CanReceive != peer.CanReceive ||
+                      old.CanSendScreenshot != peer.CanSendScreenshot || old.CanReceiveScreenshot != peer.CanReceiveScreenshot;
             peers[peer.Id] = peer;
         }
 
@@ -258,7 +265,7 @@ internal sealed class Discovery : IDisposable
 
         if (changed)
         {
-            Log.Write($"PCを検出: {peer.Alias} ({peer.Address}) 送る={peer.CanSend} 受け取る={peer.CanReceive}");
+            Log.Write($"PCを検出: {peer.Alias} ({peer.Address}) 送る={peer.CanSend} 受け取る={peer.CanReceive} スクショ送る={peer.CanSendScreenshot} スクショ受け取る={peer.CanReceiveScreenshot}");
             PeersChanged?.Invoke();
         }
     }
@@ -338,5 +345,12 @@ internal sealed class Discovery : IDisposable
 
         [JsonPropertyName("receive")]
         public bool Receive { get; set; }
+
+        /// <summary>未対応の旧バージョンからは届かないので false になる。</summary>
+        [JsonPropertyName("sendScreenshot")]
+        public bool SendScreenshot { get; set; }
+
+        [JsonPropertyName("receiveScreenshot")]
+        public bool ReceiveScreenshot { get; set; }
     }
 }

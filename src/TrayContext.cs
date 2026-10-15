@@ -9,6 +9,7 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
     private readonly ClipboardWatcher watcher = new();
     private readonly ToolStripMenuItem pauseItem;
     private readonly ToolStripMenuItem notifyItem;
+    private readonly ToolStripMenuItem screenshotItem;
     private readonly SynchronizationContext uiContext;
     private readonly AppConfig config;
     private Sender? sender;
@@ -41,6 +42,11 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("設定・ペアリング...", null, (_, _) => ShowSettings());
+        screenshotItem = new ToolStripMenuItem("ウインドウのスクリーンショットを送る");
+        screenshotItem.DropDownItems.Add("(なし)"); // 子項目がないと ▶ が出ず DropDownOpening も来ない
+        screenshotItem.DropDownOpening += (_, _) => BuildScreenshotMenu();
+        menu.Items.Add(screenshotItem);
+        menu.Opening += (_, _) => screenshotItem.Visible = config.ScreenshotSendEnabled;
         menu.Items.Add(pauseItem);
         menu.Items.Add(notifyItem);
         menu.Items.Add("ログを開く", null, (_, _) => OpenLog());
@@ -92,7 +98,7 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
     {
         Stop();
 
-        if (config.SendEnabled)
+        if (config.SendEnabled || config.ScreenshotSendEnabled)
         {
             sender = new Sender(config, GetSendTargets);
             sender.StatusChanged += OnStatus;
@@ -116,7 +122,8 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
 
         try
         {
-            discovery = new Discovery(config, sender != null, server != null && config.ReceiveEnabled);
+            discovery = new Discovery(config, sender != null && config.SendEnabled, server != null && config.ReceiveEnabled,
+                sender != null && config.ScreenshotSendEnabled, server != null && config.ScreenshotReceiveEnabled);
             discovery.PeersChanged += OnPeersChanged;
         }
         catch (System.Net.Sockets.SocketException e)
@@ -141,11 +148,11 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
         discovery = null;
     }
 
-    /// <summary>ペア済みで「受け取る」が有効な、同じLANのPCすべてが送信先。</summary>
-    private IReadOnlyList<SendTarget> GetSendTargets()
+    /// <summary>ペア済みで「受け取る」(画像は「スクリーンショットを受け取る」) が有効な、同じLANのPCすべてが送信先。</summary>
+    private IReadOnlyList<SendTarget> GetSendTargets(ClipboardPayload payload)
     {
         var targets = new List<SendTarget>();
-        foreach (Peer p in Peers.Where(p => p.CanReceive))
+        foreach (Peer p in Peers.Where(p => payload.IsImage ? p.CanReceiveScreenshot : p.CanReceive))
         {
             PairedDevice? pair = config.FindPair(p.Id);
             if (pair != null)
@@ -188,7 +195,7 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
     private void UpdateTrayText()
     {
         var roles = new List<string>();
-        if (sender != null)
+        if (sender != null && config.SendEnabled)
         {
             roles.Add("送信");
         }
@@ -206,7 +213,7 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
 
     private async void OnClipboardChanged()
     {
-        if (sender == null || pauseItem.Checked)
+        if (sender == null || !config.SendEnabled || pauseItem.Checked)
         {
             return;
         }
@@ -244,6 +251,59 @@ internal sealed class TrayContext : ApplicationContext, IDeviceHost
                 }
             },
             null);
+    }
+
+    /// <summary>サブメニューを開くたびに、いま表示中のウインドウ一覧を作り直す。</summary>
+    private void BuildScreenshotMenu()
+    {
+        screenshotItem.DropDownItems.Clear();
+        List<CaptureTarget> targets;
+        try
+        {
+            targets = WindowCapture.EnumerateTargets();
+        }
+        catch (Exception e)
+        {
+            Log.Write($"ウインドウ一覧の取得に失敗: {e.Message}");
+            targets = new List<CaptureTarget>();
+        }
+
+        foreach (CaptureTarget t in targets)
+        {
+            screenshotItem.DropDownItems.Add(Truncate(t.Title, 60), null, (_, _) => SendScreenshot(t));
+        }
+
+        if (targets.Count == 0)
+        {
+            screenshotItem.DropDownItems.Add(new ToolStripMenuItem("(ウインドウがありません)") { Enabled = false });
+        }
+    }
+
+    private async void SendScreenshot(CaptureTarget target)
+    {
+        if (sender == null || !config.ScreenshotSendEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            // メニューが閉じて画面から消えるのを待ってから撮る
+            await Task.Delay(200);
+            ClipboardPayload payload;
+            using (Bitmap image = WindowCapture.Capture(target.Handle))
+            {
+                payload = ClipboardPayload.FromImage(image);
+            }
+
+            Log.Write($"スクリーンショットを撮影: {target.Title}");
+            sender?.Enqueue(payload);
+        }
+        catch (Exception e)
+        {
+            Log.Write($"スクリーンショットの撮影に失敗 ({target.Title}): {e.Message}");
+            tray.ShowBalloonTip(4000, "SendClipboard", $"スクリーンショットを撮影できません: {e.Message}", ToolTipIcon.Warning);
+        }
     }
 
     private void ShowSettings()

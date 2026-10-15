@@ -4,15 +4,19 @@ namespace SendClipboard;
 
 /// <summary>
 /// 転送するクリップボード内容。形式ごとに (名前, バイト列) を持つ。
-/// 対応形式はテキストのみ。
+/// 対応形式はテキストと画像 (PNG)。
 /// </summary>
 internal sealed class ClipboardPayload
 {
     private const string FormatText = "text";
+    private const string FormatPng = "png";
 
     private readonly List<(string Name, byte[] Data)> items = new();
 
     public bool IsEmpty => items.Count == 0;
+
+    /// <summary>スクリーンショット (画像) か。送受信の可否はテキストと別に設定する。</summary>
+    public bool IsImage => items.Any(i => i.Name == FormatPng);
 
     public string Describe() => string.Join(", ", items.Select(i => $"{i.Name}:{i.Data.Length:N0}B"));
 
@@ -29,6 +33,16 @@ internal sealed class ClipboardPayload
         return payload;
     }
 
+    /// <summary>画像 (スクリーンショットなど) から作る。</summary>
+    public static ClipboardPayload FromImage(Image image)
+    {
+        var payload = new ClipboardPayload();
+        using var ms = new MemoryStream();
+        image.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+        payload.items.Add((FormatPng, ms.ToArray()));
+        return payload;
+    }
+
     /// <summary>クリップボードに設定する。UIスレッド(STA)で呼ぶこと。</summary>
     public async Task ApplyAsync()
     {
@@ -38,6 +52,13 @@ internal sealed class ClipboardPayload
             if (name == FormatText)
             {
                 data.SetData(DataFormats.UnicodeText, Encoding.UTF8.GetString(bytes));
+            }
+            else if (name == FormatPng)
+            {
+                // PNG 形式に対応するアプリ向けと、一般的なビットマップ形式の両方で設定する
+                data.SetData("PNG", new MemoryStream(bytes));
+                using var image = Image.FromStream(new MemoryStream(bytes));
+                data.SetData(DataFormats.Bitmap, new Bitmap(image));
             }
         }
 
